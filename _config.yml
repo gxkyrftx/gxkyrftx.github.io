@@ -21,7 +21,6 @@ RSS: false
 # weibo_username:     qiubaiying
 zhihu_username:     qiubaiying
 github_username:    qiubaiying
-facebook_username:  baiying.qiu.7
 jianshu_username:   e71990ada2fd
 #twitter_username:   qiubaiying
 
@@ -98,16 +97,7 @@ service-worker: true
 
 # Friends
 friends: [
-    {
-        title: "WY",
-        href: "http://zhengwuyang.com"
-    },{
-        title: "简书·BY",
-        href: "http://www.jianshu.com/u/e71990ada2fd"
-    },{
-        title: "Apple",
-        href: "https://apple.com"
-    },{
+   {
         title: "Apple Developer",
         href: "https://developer.apple.com/"
     }
