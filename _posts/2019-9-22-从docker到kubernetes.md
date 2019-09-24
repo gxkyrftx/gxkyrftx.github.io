@@ -245,15 +245,198 @@ docker run [options] image [:tag][commend][arg..]
 
 ## 3.1 将容器变成镜像
 
+docker commit  <container>  [repo:tag]
+
+官网api地址：https://docs.docker.com/engine/reference/commandline/create/
+
+优点：
+
+方便，快速，适合于开发测试阶段，在本地验证结果
+
+缺点：
+
+不规范，无法自动化创建镜像
+
 ![1569152292077](C:\Users\dell\Desktop\笔记\docker到k8s\1569152292077.png)
 
-## 3.2 buildfile语法
+## 3.2 dockerfile语法
+
+官方文档：https://docs.docker.com/engine/reference/commandline/build/
+
+**docker build** 命令用于使用 Dockerfile 创建镜像。提供了打包的标准化工具，一个简单的例子如下：
+
+```
+FROM nimmis/ubuntu:14.04		#基础开发环境
+MAINTAINER nimmis<kjell.havneskold@gmail.com>		#维护者信息
+# disable interactive functions				
+ENV DEBIAN_FRONTEND noninteractive		#环境变量信息
+# set default java environment variable
+ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64		#增加环境变量
+RUN apt-get install -y software-properties-common && \add-apt-repository ppa:openjdk-r/ppa -y && \apt-get update && \apt-get install -y --no-install-recommends openjdk-8-jre && \rm -rf /var/lib/apt/lists/*		#运行命令		
+```
+
+docker的build过程，是在容器中执行的，而不是本地的操作系统
+
+```
+ADD 本地文件的位置 容器中的位置		#添加一个文件
+EXPOSE 22		#开放一个端口
+```
+
+使用supervisor监管
+
+```
+[supervisord]
+nodaemon=true
+
+[program:sshd]
+command=/usr/sbin/sshd -D
+
+[program:apache2]
+command=/bin/bash -c 'source /etc/apache2/envvars && exec /usr/sbin/apache2 -DFOREGROUND
+```
 
 ## 3.3 镜像制作中的常见问题
 
+从容器打包的角度考虑，一个容器究竟运行几个程序？程序参数和配置文件？程序日志输出的问题等等，都是需要考虑的
 
 
 
+# 4 容器互联
+
+## 4.1 基于Volume的互联
+
+### 4.1.1 Volume简介
+
+- Docker的文件系统是这样工作的：
+  1. Docker镜像是由多个文件系统（只读层）叠加而成。
+  2. 当我们启动一个容器的时候，Docker会加载只读镜像层并在其上添加一个读写层。
+  3. 如果运行中的容器修改了现有的一个已经存在的文件，那该文件将会从读写层下面的只读层复制到读写层，该文件的只读版本仍然存在，只是已经被读写层中该文件的副本所隐藏。
+  4. 当删除Docker容器，并通过该镜像重新启动时，之前的更改将会丢失。在Docker中，只读层及在顶部的读写层的组合被称为 Union File System（联合文件系统）
+- 基于Volume的互联可以解决跨主机的共享问题。简单来说，Volume就是目录或者文件，它可以绕过默认的联合文件系统，而以正常的文件或者目录的形式存在于宿主机上。基于Volume的互联可以解决跨主机的共享问题
+
+### 4.1.2 Volume启动方式
+
+两种方式来初始化Volume
+
+1.
+
+```
+docker run -it --name container-test -h CONTAINER -v /data java /bin/bash
+```
+
+上面的命令会将`/data`挂载到容器中，并绕过联合文件系统，可以在主机上直接操作该目录。任何在该镜像`/data`路径的文件将会被复制到Volume。可以使用`docker inspect`命令找到Volume在主机上的存储位置,命令如下：
+
+```
+docker inspect container-test | grep Source
+```
+
+![1569225034891](C:\Users\dell\Desktop\笔记\docker到k8s\1569225034891.png)
+
+从主机上添加文件到此文件夹下，然后进入容器查看
+
+![1569225351267](C:\Users\dell\Desktop\笔记\docker到k8s\1569225351267.png)
+
+![1569225392835](C:\Users\dell\Desktop\笔记\docker到k8s\1569225392835.png)
+
+只要将主机的目录挂载到容器的目录上，那改变就会立即生效。
+
+2.
+
+在Dockerfile中通过使用`VOLUME`指令来达到相同的目的
+
+```
+FROM java:wheezy
+VOLUME /data
+```
+
+注意：在容器上挂载指定的主机目录是只有-v参数可以做的
+
+```
+docker run -v /home/data:/data java ls /data
+```
+
+当使用`-v`参数时，镜像目录下的任何文件都不会被复制到Volume中。（Volume会复制到镜像目录，镜像不会复制到Volume）
+
+### 4.1.3 数据共享
+
+如果要授权一个容器访问另一个容器的Volume，可以使用`-volumes-from`参数来执行`docker run`
+
+```
+docker run -it -h NEWCONTAINER --volumes-from container-test java /bin/bash
+```
+
+![1569228856029](C:\Users\dell\Desktop\笔记\docker到k8s\1569228856029.png)
+
+不管container-test是否运行，它都会起作用。只要有容器连接Volume，它就不会被删除。
+
+### 4.1.4 数据容器
+
+常见的使用场景是使用纯数据容器来持久化数据库、配置文件或者数据文件等。
+
+```
+docker run --name dbdata postgres echo "Data-only container for postgres"
+```
+
+该命令将会创建一个已经包含在Dockerfile里定义过Volume的postgres镜像，运行`echo`命令然后退出。在运行`docker ps`命令时，`echo`可以帮助我们识别某镜像的用途。可以用`-volumes-from`命令来识别其它容器的Volume：
+
+```
+docker run -d --volumes-from dbdata --name db1 postgres
+```
+
+使用数据容器的两个注意点：
+
+- 不要运行数据容器，这纯粹是在浪费资源。
+- 不要为了数据容器而使用“最小的镜像”，只使用数据库镜像本身就可以。
+
+### 4.1.5 备份
+
+```
+docker run --rm --volumes-from dbdata -v $(pwd):/backup debian tar cvf /backup/backup.tar /var/lib/postgresql/data
+
+```
+
+该示例应该会将Volume里所有的东西压缩为一个tar包（官方的postgres Dockerfile在/var/lib/postgresql/data目录下定义了一个Volume）
+
+### 4.1.6 权限与许可
+
+通常你需要设置Volume的权限或者为Volume初始化一些默认数据或者配置文件。要注意的关键点是，在Dockerfile的`VOLUME`指令后的任何东西都不能改变该Volume
+
+### 4.1.7 删除Volumes
+
+如果已经使用`docker rm` 来删除你的容器，那可能有很多的孤立的Volume仍在占用着空间。
+
+Volume只有在下列情况下才能被删除：
+
+- 该容器是用`docker rm －v`命令来删除的（`-v`是必不可少的）。
+- `docker run`中使用了`--rm`参数
+
+
+即使用以上两种命令，也只能删除没有容器连接的Volume。连接到用户指定主机目录的Volume永远不会被docker删除。
+
+## 4.2 基于Link的互联
+
+docker run --link可以用来链接2个容器，使得源容器（被链接的容器）和接收容器（主动去链接的容器）之间可以互相通信，并且接收容器可以获取源容器的一些数据。一个应用如下：
+
+```bash
+// 1、创建容器 test1
+docker run -d --name test1 nginx
+
+// 2、创建容器 test2并 link 到 test1。
+docker run -d --name test2 --link test1 nginx
+
+// 3、进入test2，并 ping test1，发现是可以 ping 通的。
+docker exec -it test2 /bin/sh
+ping test1
+
+```
+
+实例：
+
+![1569231848189](C:\Users\dell\Desktop\笔记\docker到k8s\1569231848189.png)
+
+![1569231878126](C:\Users\dell\Desktop\笔记\docker到k8s\1569231878126.png)
+
+## 4.3 基于网络的互联
 
 
 
