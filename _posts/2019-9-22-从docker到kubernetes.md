@@ -438,6 +438,80 @@ ping test1
 
 ## 4.3 基于网络的互联
 
+# 5 docker的网络机制
+
+## 5.1 Linux路由机制打通网络
+
+一个ip为128网段，另一个ip为130
+
+docker128上修改Docker0的网络地址，与docker130不冲突
+
+```
+vi /usr/lib/systemd/system/docker.service
+
+ExecStart=/usr/bin/dockerdaemon --bip=172.18.42.1/16 -H fd://  -H=unix:///var/run/docker.sock
+
+systemctl daemon-reload 重启
+```
+
+```
+docker130 上执行route add -net 172.18.0.0/16 gw192.168.18.128
+docker128 上执行route add -net 172.17.0.0/16 gw192.168.18.130
+```
+
+但是这个时候，从从主机，ping另一台主机的docker是被禁止的，这是因为docker的地址是一个虚拟地址，被防火墙规则所限制，导致的禁止
+
+处理方法：
+
+```
+iptables -F; iptables -t nat -F
+```
+
+
+
+## 5.2 Docker网络方案一览
+
+1.双网卡独立大二层交换
+
+![1571148608262](C:\Users\dell\Desktop\笔记\docker到k8s\1571148608262.png)
+
+小网络适用，大网络容易造成洪泛。
+
+2.overlay网络
+
+![1571148731920](C:\Users\dell\Desktop\笔记\docker到k8s\1571148698943.png)
+
+2.1 基于ovs的Overlay网络
+
+![1571148857843](C:\Users\dell\Desktop\笔记\docker到k8s\1571148857843.png)
+
+
+
+2.2 neutron网络
+
+![1571149080339](C:\Users\dell\Desktop\笔记\docker到k8s\1571149080339.png)
+
+
+
+3.docker中的网络
+
+主要使用ovs
+
+```
+主要特性：
+•Open vSwitch集成
+•用于Docker的零配置多主机网络
+•Docker/SocketPlane集群的优雅增长
+•支持多网络
+•分布式IP
+•地址管理(IPAM)
+
+```
+
+
+
+
+
 
 
 # 15 出现的问题
